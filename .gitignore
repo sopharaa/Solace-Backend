@@ -1,0 +1,21 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+env/
+.env
+.env.*
+
+
+# Django / Python build outputs
+*.egg-info/
+dist/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
