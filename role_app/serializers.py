@@ -3,6 +3,23 @@ from .models import Role
 from user_app.models import User
 
 
+class RoleSerializer(serializers.ModelSerializer):
+    user_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Role
+        fields = ['id', 'name', 'permission', 'created_at', 'updated_at', 'user_count']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_name(self, value):
+        qs = Role.objects.filter(name__iexact=value, deleted_at__isnull=True)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError('A role with this name already exists.')
+        return value
+
+
 class SelectRoleSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=['STUDENT', 'STAFF'])
 
@@ -38,5 +55,3 @@ class ReviewRoleRequestSerializer(serializers.Serializer):
         user.status = new_status
         user.save(update_fields=['status'])
         return user
-
-

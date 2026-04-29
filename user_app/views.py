@@ -4,8 +4,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import LoginSerializer, UserSerializer, GoogleLoginSerializer
-from .models import BlacklistedAccessToken
-
+from .models import BlacklistedAccessToken, User
 
 def _build_token_pair(user):
     """Return a dict with access and refresh JWT strings for the given user."""
@@ -53,3 +52,10 @@ def logout(request):
     BlacklistedAccessToken.objects.get_or_create(jti=jti)
 
     return Response({'message': 'Logout successful'}, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_users(request):
+    users = User.objects.all().order_by('-created_at')
+    serializer = UserSerializer(users, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)

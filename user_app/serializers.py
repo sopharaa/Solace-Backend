@@ -4,8 +4,14 @@ import requests
 from .models import User
 
 
+class RoleInlineSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    permission = serializers.JSONField()
+
+
 class UserSerializer(serializers.ModelSerializer):
-    role = serializers.StringRelatedField()
+    role = RoleInlineSerializer(read_only=True)
     positions = serializers.SerializerMethodField()
 
     class Meta:

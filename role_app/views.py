@@ -1,11 +1,68 @@
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from user_app.models import User
 from user_app.serializers import UserSerializer
-from .serializers import SelectRoleSerializer, ReviewRoleRequestSerializer
+from .serializers import SelectRoleSerializer, ReviewRoleRequestSerializer, RoleSerializer
+from .models import Role
 from .permissions import IsAdmin
+from django.db.models import Count, Q
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAdmin])
+def list_or_create_role(request):
+    if request.method == 'GET':
+        roles = Role.objects.annotate(
+            user_count=Count('users', filter=Q(users__status__in=['APPROVED', 'ACTIVE'], users__deleted_at__isnull=True))
+        ).filter(deleted_at__isnull=True).order_by('name')
+        serializer = RoleSerializer(roles, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # POST — restore soft-deleted record if same name exists, otherwise create new
+    name = request.data.get('name', '').strip()
+    existing = Role.objects.filter(name__iexact=name, deleted_at__isnull=False).first()
+    if existing:
+        serializer = RoleSerializer(existing, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save(deleted_at=None)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = RoleSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
+@permission_classes([IsAdmin])
+def role_detail(request, pk):
+    try:
+        role = Role.objects.annotate(
+            user_count=Count('users', filter=Q(users__status__in=['APPROVED', 'ACTIVE'], users__deleted_at__isnull=True))
+        ).get(pk=pk, deleted_at__isnull=True)
+    except Role.DoesNotExist:
+        return Response({'error': 'Role not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        serializer = RoleSerializer(role)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    if request.method in ('PUT', 'PATCH'):
+        serializer = RoleSerializer(role, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # DELETE (soft)
+    role.deleted_at = timezone.now()
+    role.save(update_fields=['deleted_at'])
+    return Response({'message': 'Role deleted successfully'}, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
@@ -66,5 +123,3 @@ def review_role_request(request, pk):
         'message': f'Role request {updated_user.status.lower()}',
         'user': UserSerializer(updated_user).data,
     }, status=status.HTTP_200_OK)
-
-

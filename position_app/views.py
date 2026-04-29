@@ -7,13 +7,16 @@ from user_app.serializers import UserSerializer
 from .models import Position, StaffPosition
 from .serializers import PositionSerializer, AssignPositionsSerializer
 from .permissions import IsAdmin
+from django.db.models import Count, Q
 
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAdmin])
 def list_or_create_position(request):
     if request.method == 'GET':
-        positions = Position.objects.filter(is_active=True).order_by('name')
+        positions = Position.objects.annotate(
+            assigned_count=Count('staff_positions', filter=Q(staff_positions__deleted_at__isnull=True))
+        ).filter(is_active=True).order_by('name')
         serializer = PositionSerializer(positions, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -38,7 +41,9 @@ def list_or_create_position(request):
 @permission_classes([IsAdmin])
 def position_detail(request, pk):
     try:
-        position = Position.objects.get(pk=pk)
+        position = Position.objects.annotate(
+            assigned_count=Count('staff_positions', filter=Q(staff_positions__deleted_at__isnull=True))
+        ).get(pk=pk)
     except Position.DoesNotExist:
         return Response({'error': 'Position not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -64,7 +69,9 @@ def position_detail(request, pk):
 @permission_classes([IsAdmin])
 def toggle_position(request, pk):
     try:
-        position = Position.objects.get(pk=pk)
+        position = Position.objects.annotate(
+            assigned_count=Count('staff_positions', filter=Q(staff_positions__deleted_at__isnull=True))
+        ).get(pk=pk)
     except Position.DoesNotExist:
         return Response({'error': 'Position not found'}, status=status.HTTP_404_NOT_FOUND)
 
