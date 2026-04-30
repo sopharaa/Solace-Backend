@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from .models import State
 from .serializers import StateSerializer
 from .permissions import IsAdmin
+from rest_framework.permissions import IsAuthenticated
 
 # Create your views here.
 @api_view(['GET', 'POST'])
@@ -56,3 +57,10 @@ def state_detail(request, pk):
     state.deleted_at = timezone.now()
     state.save(update_fields=['is_active', 'deleted_at'])
     return Response({'message': 'State deleted successfully'}, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_active_states(request):
+    states = State.objects.filter(is_active=True).order_by('name')
+    serializer = StateSerializer(states, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)

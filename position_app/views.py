@@ -7,6 +7,7 @@ from user_app.serializers import UserSerializer
 from .models import Position, StaffPosition
 from .serializers import PositionSerializer, AssignPositionsSerializer
 from .permissions import IsAdmin
+from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count, Q
 
 
@@ -16,7 +17,7 @@ def list_or_create_position(request):
     if request.method == 'GET':
         positions = Position.objects.annotate(
             assigned_count=Count('staff_positions', filter=Q(staff_positions__deleted_at__isnull=True))
-        ).filter(is_active=True).order_by('name')
+        ).filter(deleted_at__isnull=True).order_by('name')
         serializer = PositionSerializer(positions, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -80,8 +81,7 @@ def toggle_position(request, pk):
         return Response({'error': 'is_active (boolean) is required'}, status=status.HTTP_400_BAD_REQUEST)
 
     position.is_active = is_active
-    position.deleted_at = None if is_active else timezone.now()
-    position.save(update_fields=['is_active', 'deleted_at'])
+    position.save(update_fields=['is_active'])
 
     serializer = PositionSerializer(position)
     return Response(serializer.data, status=status.HTTP_200_OK)
@@ -115,3 +115,10 @@ def assign_positions(request, pk):
         'message': 'Positions assigned successfully',
         'user': UserSerializer(updated_user).data,
     }, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_active_positions(request):
+    positions = Position.objects.filter(is_active=True).order_by('name')
+    serializer = PositionSerializer(positions, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
