@@ -6,6 +6,7 @@ from .models import User
 
 class RoleInlineSerializer(serializers.Serializer):
     id = serializers.IntegerField()
+    uuid = serializers.UUIDField()
     name = serializers.CharField()
     permission = serializers.JSONField()
 
@@ -16,7 +17,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', 'role', 'positions', 'status', 'avatar_url','created_at', 'updated_at']
+        fields = ['id', 'uuid', 'name', 'email', 'role', 'positions', 'status', 'avatar_url','created_at', 'updated_at']
 
     def get_positions(self, obj):
         from position_app.models import StaffPosition

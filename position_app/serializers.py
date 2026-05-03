@@ -8,8 +8,8 @@ class PositionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Position
-        fields = ['id', 'name', 'description', 'is_active', 'created_at', 'updated_at', 'assigned_count']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        fields = ['id', 'uuid', 'name', 'description', 'is_active', 'created_at', 'updated_at', 'assigned_count']
+        read_only_fields = ['id', 'uuid', 'created_at', 'updated_at']
 
     def validate_name(self, value):
         # Exclude the current instance when updating

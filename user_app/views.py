@@ -59,3 +59,11 @@ def get_users(request):
     users = User.objects.all().order_by('-created_at')
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me(request):
+    """Return the currently authenticated user's profile."""
+    serializer = UserSerializer(request.user)
+    return Response(serializer.data, status=status.HTTP_200_OK)

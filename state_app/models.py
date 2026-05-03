@@ -1,7 +1,9 @@
+import uuid as _uuid
 from django.db import models
 
 
 class State(models.Model):
+    uuid = models.UUIDField(default=_uuid.uuid4, editable=False, unique=True)
     name = models.CharField(max_length=30)
     description = models.TextField(null=True, blank=True)
     is_active = models.BooleanField(default=True)

@@ -1,3 +1,4 @@
+import uuid as _uuid
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 
@@ -24,6 +25,7 @@ class User(AbstractBaseUser):
         REJECTED = 'REJECTED', 'Rejected'
         BANNED = 'BANNED', 'Banned'
 
+    uuid = models.UUIDField(default=_uuid.uuid4, editable=False, unique=True)
     role = models.ForeignKey('role_app.Role', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     name = models.CharField(max_length=255)
     email = models.EmailField(unique=True)

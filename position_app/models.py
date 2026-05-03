@@ -1,6 +1,8 @@
+import uuid as _uuid
 from django.db import models
 
 class Position(models.Model):
+    uuid = models.UUIDField(default=_uuid.uuid4, editable=False, unique=True)
     name = models.CharField(max_length=30)
     description = models.TextField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
@@ -16,6 +18,7 @@ class Position(models.Model):
 
 
 class StaffPosition(models.Model):
+    uuid = models.UUIDField(default=_uuid.uuid4, editable=False, unique=True)
     user = models.ForeignKey(
         'users.User', on_delete=models.CASCADE, related_name='staff_positions'
     )

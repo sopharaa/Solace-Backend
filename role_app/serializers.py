@@ -8,8 +8,8 @@ class RoleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Role
-        fields = ['id', 'name', 'permission', 'created_at', 'updated_at', 'user_count']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        fields = ['id', 'uuid', 'name', 'permission', 'created_at', 'updated_at', 'user_count']
+        read_only_fields = ['id', 'uuid', 'created_at', 'updated_at']
 
     def validate_name(self, value):
         qs = Role.objects.filter(name__iexact=value, deleted_at__isnull=True)
