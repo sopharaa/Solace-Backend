@@ -25,7 +25,7 @@ class SelectRoleSerializer(serializers.Serializer):
 
     def validate(self, data):
         user = self.context['request'].user
-        if user.role is not None:
+        if user.role is not None and user.status != User.Status.REJECTED:
             raise serializers.ValidationError('Role has already been assigned.')
         return data
 

@@ -88,7 +88,7 @@ def select_role(request):
 @permission_classes([IsAdmin])
 def list_role_requests(request):
     pending_users = User.objects.filter(
-        role__name='STAFF', status=User.Status.PENDING
+        role__name='STAFF', status__in=[User.Status.PENDING, User.Status.REJECTED, User.Status.APPROVED]
     ).select_related('role').order_by('-created_at')
 
     serializer = UserSerializer(pending_users, many=True)
