@@ -1,3 +1,4 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -67,3 +68,47 @@ def me(request):
     """Return the currently authenticated user's profile."""
     serializer = UserSerializer(request.user)
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def user_detail(request, user_id):
+    user = get_object_or_404(User, id=user_id, deleted_at__isnull=True)
+    
+    if request.method == 'GET':
+        serializer = UserSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+    elif request.method == 'PATCH':
+        if 'role_id' in request.data or 'position_ids' in request.data or request.data.get('status') == 'BANNED':
+            admin_password = request.data.get('admin_password')
+            if not admin_password or not request.user.check_password(admin_password):
+                return Response({'error': 'Invalid admin password. Verification failed.'}, status=status.HTTP_403_FORBIDDEN)
+                
+        if 'status' in request.data:
+            user.status = request.data['status'].upper()
+        if 'role_id' in request.data:
+            from role_app.models import Role
+            role = get_object_or_404(Role, id=request.data['role_id'])
+            user.role = role
+        user.save()
+        
+        if 'position_ids' in request.data:
+            from position_app.models import StaffPosition, Position
+            StaffPosition.objects.filter(user=user).delete()
+            for pos_id in request.data['position_ids']:
+                pos = get_object_or_404(Position, id=pos_id)
+                StaffPosition.objects.create(user=user, position=pos)
+                
+        serializer = UserSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
+    elif request.method == 'DELETE':
+        admin_password = request.data.get('admin_password')
+        if not admin_password or not request.user.check_password(admin_password):
+            return Response({'error': 'Invalid admin password. Verification failed.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        from django.utils import timezone
+        user.deleted_at = timezone.now()
+        user.save()
+        return Response(status=status.HTTP_204_NO_CONTENT)
