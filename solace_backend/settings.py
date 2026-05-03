@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'role_app',
     'position_app',
     'state_app',
+    'request_app',
 ]
 
 MIDDLEWARE = [
