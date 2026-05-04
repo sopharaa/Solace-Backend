@@ -40,11 +40,11 @@ def list_or_create_role(request):
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsAdmin])
-def role_detail(request, pk):
+def role_detail(request, uuid):
     try:
         role = Role.objects.annotate(
             user_count=Count('users', filter=Q(users__status__in=['APPROVED', 'ACTIVE'], users__deleted_at__isnull=True))
-        ).get(pk=pk, deleted_at__isnull=True)
+        ).get(uuid=uuid, deleted_at__isnull=True)
     except Role.DoesNotExist:
         return Response({'error': 'Role not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -97,9 +97,9 @@ def list_role_requests(request):
 
 @api_view(['PATCH'])
 @permission_classes([IsAdmin])
-def review_role_request(request, pk):
+def review_role_request(request, uuid):
     try:
-        role_user = User.objects.select_related('role').get(pk=pk)
+        role_user = User.objects.select_related('role').get(uuid=uuid)
     except User.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 

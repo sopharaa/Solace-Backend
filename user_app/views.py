@@ -72,8 +72,8 @@ def me(request):
 
 @api_view(['GET', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
-def user_detail(request, user_id):
-    user = get_object_or_404(User, id=user_id, deleted_at__isnull=True)
+def user_detail(request, uuid):
+    user = get_object_or_404(User, uuid=uuid, deleted_at__isnull=True)
     
     if request.method == 'GET':
         serializer = UserSerializer(user)
@@ -89,7 +89,7 @@ def user_detail(request, user_id):
             user.status = request.data['status'].upper()
         if 'role_id' in request.data:
             from role_app.models import Role
-            role = get_object_or_404(Role, id=request.data['role_id'])
+            role = get_object_or_404(Role, uuid=request.data['role_id'])
             user.role = role
         user.save()
         
@@ -97,7 +97,7 @@ def user_detail(request, user_id):
             from position_app.models import StaffPosition, Position
             StaffPosition.objects.filter(user=user).delete()
             for pos_id in request.data['position_ids']:
-                pos = get_object_or_404(Position, id=pos_id)
+                pos = get_object_or_404(Position, uuid=pos_id)
                 StaffPosition.objects.create(user=user, position=pos)
                 
         serializer = UserSerializer(user)

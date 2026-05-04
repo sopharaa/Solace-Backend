@@ -12,7 +12,8 @@ from rest_framework.permissions import IsAuthenticated
 @permission_classes([IsAdmin])
 def list_or_create_state(request):
     if request.method == 'GET':
-        states = State.objects.filter(is_active=True).order_by('name')
+        # Admin view returns ALL states (active + inactive) so inactive ones remain visible and manageable
+        states = State.objects.all().order_by('name')
         serializer = StateSerializer(states, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -35,9 +36,9 @@ def list_or_create_state(request):
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsAdmin])
-def state_detail(request, pk):
+def state_detail(request, uuid):
     try:
-        state = State.objects.get(pk=pk)
+        state = State.objects.get(uuid=uuid)
     except State.DoesNotExist:
         return Response({'error': 'State not found'}, status=status.HTTP_404_NOT_FOUND)
 

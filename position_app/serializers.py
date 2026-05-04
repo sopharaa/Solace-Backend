@@ -23,20 +23,21 @@ class PositionSerializer(serializers.ModelSerializer):
 
 class AssignPositionsSerializer(serializers.Serializer):
     position_ids = serializers.ListField(
-        child=serializers.IntegerField(), allow_empty=True
+        child=serializers.UUIDField(), allow_empty=True
     )
 
     def validate_position_ids(self, value):
-        positions = Position.objects.filter(id__in=value, is_active=True)
+        positions = Position.objects.filter(uuid__in=value, is_active=True)
         if len(positions) != len(value):
-            found_ids = set(positions.values_list('id', flat=True))
+            found_ids = set(positions.values_list('uuid', flat=True))
             invalid_ids = [pid for pid in value if pid not in found_ids]
             raise serializers.ValidationError(f'Invalid or inactive position IDs: {invalid_ids}')
         return value
 
     def save(self):
         staff_user = self.context['staff_user']
-        new_ids = set(self.validated_data['position_ids'])
+        new_uuids = set(self.validated_data['position_ids'])
+        new_ids = set(Position.objects.filter(uuid__in=new_uuids).values_list('id', flat=True))
 
         # Soft-delete removed positions
         StaffPosition.objects.filter(

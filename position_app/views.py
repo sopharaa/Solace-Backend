@@ -40,11 +40,11 @@ def list_or_create_position(request):
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsAdmin])
-def position_detail(request, pk):
+def position_detail(request, uuid):
     try:
         position = Position.objects.annotate(
             assigned_count=Count('staff_positions', filter=Q(staff_positions__deleted_at__isnull=True))
-        ).get(pk=pk)
+        ).get(uuid=uuid)
     except Position.DoesNotExist:
         return Response({'error': 'Position not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -68,11 +68,11 @@ def position_detail(request, pk):
 
 @api_view(['PATCH'])
 @permission_classes([IsAdmin])
-def toggle_position(request, pk):
+def toggle_position(request, uuid):
     try:
         position = Position.objects.annotate(
             assigned_count=Count('staff_positions', filter=Q(staff_positions__deleted_at__isnull=True))
-        ).get(pk=pk)
+        ).get(uuid=uuid)
     except Position.DoesNotExist:
         return Response({'error': 'Position not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -89,9 +89,9 @@ def toggle_position(request, pk):
 
 @api_view(['GET', 'PUT'])
 @permission_classes([IsAdmin])
-def assign_positions(request, pk):
+def assign_positions(request, uuid):
     try:
-        staff_user = User.objects.select_related('role').get(pk=pk)
+        staff_user = User.objects.select_related('role').get(uuid=uuid)
     except User.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
