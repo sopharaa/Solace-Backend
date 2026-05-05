@@ -64,13 +64,34 @@ class GoogleLoginSerializer(serializers.Serializer):
         email = userinfo['email']
         google_id = userinfo['sub']
 
+        from django.utils import timezone
+        from position_app.models import StaffPosition
+
         user = User.objects.filter(email=email).first()
         if user:
+            if user.deleted_at is not None:
+                # Admin soft-deleted this user — restore as a brand-new user:
+                # clear deletion marker, wipe role, reset status, clear positions
+                user.deleted_at = None
+                user.role = None
+                user.status = User.Status.APPROVED
+                user.is_active = True
+                if not user.provider_id:
+                    user.provider_id = google_id
+                user.save(update_fields=[
+                    'deleted_at', 'role', 'status', 'is_active', 'provider_id', 'updated_at'
+                ])
+                # Hard-delete all staff position assignments so they start clean
+                StaffPosition.objects.filter(user=user).delete()
+                return user
+
+            # Existing non-deleted user — normal login
             if not user.provider_id:
                 user.provider_id = google_id
                 user.save(update_fields=['provider_id'])
             return user
 
+        # Brand-new user
         user = User.objects.create_user(
             email=email,
             name=userinfo.get('name', ''),

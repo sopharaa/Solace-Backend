@@ -107,8 +107,17 @@ def user_detail(request, uuid):
         admin_password = request.data.get('admin_password')
         if not admin_password or not request.user.check_password(admin_password):
             return Response({'error': 'Invalid admin password. Verification failed.'}, status=status.HTTP_403_FORBIDDEN)
-            
+
         from django.utils import timezone
+        from position_app.models import StaffPosition
+
+        # Soft-delete and reset identity so the user starts fresh on next login
         user.deleted_at = timezone.now()
-        user.save()
+        user.role = None
+        user.status = User.Status.APPROVED
+        user.save(update_fields=['deleted_at', 'role', 'status', 'updated_at'])
+
+        # Remove all position assignments
+        StaffPosition.objects.filter(user=user).delete()
+
         return Response(status=status.HTTP_204_NO_CONTENT)

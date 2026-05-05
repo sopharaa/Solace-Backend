@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'position_app',
     'state_app',
     'request_app',
+    'confession_app',
 ]
 
 MIDDLEWARE = [

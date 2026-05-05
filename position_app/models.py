@@ -5,6 +5,9 @@ class Position(models.Model):
     uuid = models.UUIDField(default=_uuid.uuid4, editable=False, unique=True)
     name = models.CharField(max_length=30)
     description = models.TextField(null=True, blank=True)
+    role = models.ForeignKey(
+        'role_app.Role', on_delete=models.SET_NULL, null=True, blank=True, related_name='positions'
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

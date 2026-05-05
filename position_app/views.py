@@ -119,6 +119,9 @@ def assign_positions(request, uuid):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_active_positions(request):
-    positions = Position.objects.filter(is_active=True).order_by('name')
+    positions = Position.objects.filter(
+        is_active=True,
+        role__name__iexact='STAFF'
+    ).order_by('name')
     serializer = PositionSerializer(positions, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
