@@ -62,12 +62,28 @@ def get_users(request):
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-@api_view(['GET'])
+@api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def me(request):
-    """Return the currently authenticated user's profile."""
-    serializer = UserSerializer(request.user)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    """Return or update the currently authenticated user's profile."""
+    user = request.user
+    if request.method == 'GET':
+        serializer = UserSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    elif request.method == 'PATCH':
+        if 'name' in request.data:
+            user.name = request.data['name']
+            
+        if 'password' in request.data:
+            current_password = request.data.get('current_password')
+            if not current_password or not user.check_password(current_password):
+                return Response({'error': 'Invalid current password.'}, status=status.HTTP_400_BAD_REQUEST)
+            user.set_password(request.data['password'])
+            
+        user.save()
+        serializer = UserSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 @api_view(['GET', 'PATCH', 'DELETE'])
