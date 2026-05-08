@@ -1,0 +1,35 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Environment files (inject at runtime via --env-file or platform secrets)
+.env
+.env.*
+!.env.example
+
+# Django generated files
+*.log
+db.sqlite3
+
+# IDE / OS artefacts
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Test / coverage
+.coverage
+htmlcov/
+.pytest_cache/
