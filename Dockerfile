@@ -43,7 +43,8 @@ RUN addgroup --system --gid 1001 django && \
 
 USER appuser
 
-EXPOSE 8000
+EXPOSE 8080
 
 # Run database migrations then start Gunicorn
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn solace_backend.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120"]
+# Cloud Run sets PORT=8080; fall back to 8000 for local runs
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn solace_backend.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 3 --timeout 120"]
