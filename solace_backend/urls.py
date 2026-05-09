@@ -26,5 +26,7 @@ urlpatterns = [
         path('', include('position_app.urls')),
         path('', include('state_app.urls')),
         path('', include('request_app.urls')),
+        path('', include('confession_app.urls')),
+        path('', include('message_app.urls')),
     ])),
 ]
