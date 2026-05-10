@@ -28,5 +28,6 @@ urlpatterns = [
         path('', include('request_app.urls')),
         path('', include('confession_app.urls')),
         path('', include('message_app.urls')),
+        path('', include('comment_app.urls')),
     ])),
 ]

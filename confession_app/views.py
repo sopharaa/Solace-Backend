@@ -10,6 +10,8 @@ from .serializers import (
     ConfessionListSerializer,
     ConfessionDetailSerializer,
     CreateConfessionSerializer,
+    StaffConfessionListSerializer,
+    StaffConfessionDetailSerializer,
 )
 from message_app.models import Message
 from confession_state_app.models import ConfessionState
@@ -173,3 +175,113 @@ def confession_detail(request, uuid):
         confession.deleted_at = timezone.now()
         confession.save(update_fields=['deleted_at', 'updated_at'])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Staff views ──────────────────────────────────────────────────
+
+PAGE_SIZE = 20
+
+
+def _get_staff_position_ids(user):
+    """Return the set of position IDs assigned to this staff user."""
+    from position_app.models import StaffPosition
+    return set(
+        StaffPosition.objects.filter(user=user, deleted_at__isnull=True)
+        .values_list('position_id', flat=True)
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def staff_confession_list(request):
+    """
+    List confessions visible to this staff member.
+    - Filtered by position: only confessions whose positions overlap
+      with the staff member's assigned positions.
+    - Paginated: ?cursor=<ISO datetime>&limit=<int>
+    """
+    user = request.user
+    if user.role and user.role.name == 'Student':
+        return Response(
+            {'error': 'Students cannot access this endpoint.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    staff_pos_ids = _get_staff_position_ids(user)
+
+    # Base queryset: non-deleted, non-archived confessions
+    qs = (
+        Confession.objects.filter(deleted_at__isnull=True, is_archived=False)
+        .select_related('user', 'user__role')
+        .order_by('-updated_at')
+    )
+
+    # Position-based filtering: only show confessions that share at
+    # least one position with the staff member.
+    if staff_pos_ids:
+        confession_ids_with_match = (
+            ConfessionPosition.objects.filter(
+                deleted_at__isnull=True,
+                position_id__in=staff_pos_ids,
+            ).values_list('confession_id', flat=True)
+        )
+        qs = qs.filter(id__in=confession_ids_with_match)
+    else:
+        # Staff has no positions assigned — show nothing
+        qs = qs.none()
+
+    # Cursor-based pagination (cursor = updated_at of the last item)
+    cursor = request.query_params.get('cursor')
+    if cursor:
+        from django.utils.dateparse import parse_datetime
+        cursor_dt = parse_datetime(cursor)
+        if cursor_dt:
+            qs = qs.filter(updated_at__lt=cursor_dt)
+
+    limit = min(int(request.query_params.get('limit', PAGE_SIZE)), 100)
+    page = list(qs[:limit + 1])  # Fetch one extra to know if there's a next page
+    has_next = len(page) > limit
+    page = page[:limit]
+
+    serializer = StaffConfessionListSerializer(page, many=True)
+    return Response({
+        'results': serializer.data,
+        'has_next': has_next,
+        'next_cursor': page[-1].updated_at.isoformat() if has_next and page else None,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def staff_confession_detail(request, uuid):
+    """Retrieve full confession detail for staff (position-gated)."""
+    user = request.user
+    if user.role and user.role.name == 'Student':
+        return Response(
+            {'error': 'Students cannot access this endpoint.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    try:
+        confession = Confession.objects.select_related('user', 'user__role').get(
+            uuid=uuid, deleted_at__isnull=True
+        )
+    except Confession.DoesNotExist:
+        return Response({'error': 'Confession not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Check position access
+    staff_pos_ids = _get_staff_position_ids(user)
+    confession_pos_ids = set(
+        ConfessionPosition.objects.filter(
+            confession=confession, deleted_at__isnull=True
+        ).values_list('position_id', flat=True)
+    )
+    if not staff_pos_ids.intersection(confession_pos_ids):
+        return Response(
+            {'error': 'You do not have access to this confession.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = StaffConfessionDetailSerializer(confession)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+

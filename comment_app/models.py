@@ -14,6 +14,7 @@ class Comment(models.Model):
         User, on_delete=models.CASCADE, related_name='comments'
     )
     content = models.TextField()
+    is_anonymous = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
