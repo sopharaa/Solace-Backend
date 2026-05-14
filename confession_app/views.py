@@ -12,6 +12,9 @@ from .serializers import (
     CreateConfessionSerializer,
     StaffConfessionListSerializer,
     StaffConfessionDetailSerializer,
+    StudentCommentListSerializer,
+    StudentCommentDetailSerializer,
+    AdminConfessionListSerializer,
 )
 from message_app.models import Message
 from confession_state_app.models import ConfessionState
@@ -285,3 +288,197 @@ def staff_confession_detail(request, uuid):
     serializer = StaffConfessionDetailSerializer(confession)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
+
+# ── Student comment views ────────────────────────────────────────
+
+STUDENT_PAGE_SIZE = 6
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def student_comment_list(request):
+    """
+    List the current student's confessions with comment summaries.
+    Paginated: ?cursor=<ISO datetime>&limit=<int>
+    Optional:  ?archived=true  → only archived confessions
+               ?archived=false → only non-archived (default)
+    """
+    user = request.user
+    # Only show confessions that have at least one position assigned
+    # (confessions where the student chose "none" are excluded).
+    confession_ids_with_positions = (
+        ConfessionPosition.objects.filter(deleted_at__isnull=True)
+        .values_list('confession_id', flat=True)
+    )
+
+    # Archive filter (default: non-archived)
+    archived_param = request.query_params.get('archived', 'false').lower()
+    show_archived = archived_param in ('true', '1', 'yes')
+
+    qs = (
+        Confession.objects.filter(
+            user=user,
+            deleted_at__isnull=True,
+            is_archived=show_archived,
+            id__in=confession_ids_with_positions,
+        )
+        .select_related('user', 'user__role')
+        .order_by('-updated_at')
+    )
+
+    # Cursor-based pagination
+    cursor = request.query_params.get('cursor')
+    if cursor:
+        from django.utils.dateparse import parse_datetime
+        cursor_dt = parse_datetime(cursor)
+        if cursor_dt:
+            qs = qs.filter(updated_at__lt=cursor_dt)
+
+    limit = min(int(request.query_params.get('limit', STUDENT_PAGE_SIZE)), 100)
+    page = list(qs[:limit + 1])
+    has_next = len(page) > limit
+    page = page[:limit]
+
+    serializer = StudentCommentListSerializer(page, many=True)
+    return Response({
+        'results': serializer.data,
+        'has_next': has_next,
+        'next_cursor': page[-1].updated_at.isoformat() if has_next and page else None,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def student_comment_detail(request, uuid):
+    """
+    Retrieve a single confession with its full comment thread.
+    Used by /student/view-comment/[id] detail page.
+    Only the owning student can access.
+    """
+    user = request.user
+    try:
+        confession = Confession.objects.select_related('user', 'user__role').get(
+            uuid=uuid, user=user, deleted_at__isnull=True
+        )
+    except Confession.DoesNotExist:
+        return Response({'error': 'Confession not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = StudentCommentDetailSerializer(confession, context={'request': request})
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ── Admin views ──────────────────────────────────────────────────
+
+ADMIN_PAGE_SIZE = 20
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_confession_list(request):
+    """
+    List ALL confessions for admin oversight.
+    Paginated: ?cursor=<ISO datetime>&limit=<int>
+    Optional:  ?search=<query>
+    Only admins can access.
+    """
+    user = request.user
+    if not user.role or user.role.name != 'ADMIN':
+        return Response(
+            {'error': 'Only admins can access this endpoint.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    base_qs = (
+        Confession.objects.filter(deleted_at__isnull=True)
+        .select_related('user', 'user__role')
+        .order_by('-updated_at')
+    )
+
+    # Search filter
+    search = request.query_params.get('search', '').strip()
+    if search:
+        from django.db.models import Q
+        base_qs = base_qs.filter(
+            Q(title__icontains=search) |
+            Q(user__name__icontains=search) |
+            Q(user__email__icontains=search)
+        )
+
+    # Archived filter
+    archived_filter = request.query_params.get('archived')
+    if archived_filter == 'true':
+        base_qs = base_qs.filter(is_archived=True)
+    elif archived_filter == 'false':
+        base_qs = base_qs.filter(is_archived=False)
+
+    # Compute total counts BEFORE anonymous filter and cursor pagination
+    total_count = base_qs.count()
+    anonymous_count = base_qs.filter(is_anonymous=True).count()
+    non_anonymous_count = total_count - anonymous_count
+
+    # Anonymous filter
+    qs = base_qs
+    anon_filter = request.query_params.get('anonymous')
+    if anon_filter == 'true':
+        qs = qs.filter(is_anonymous=True)
+    elif anon_filter == 'false':
+        qs = qs.filter(is_anonymous=False)
+
+    limit = min(int(request.query_params.get('limit', ADMIN_PAGE_SIZE)), 100)
+    page_param = request.query_params.get('page')
+
+    if page_param:
+        try:
+            page_num = max(1, int(page_param))
+        except ValueError:
+            page_num = 1
+        offset = (page_num - 1) * limit
+        page_items = list(qs[offset:offset + limit + 1])
+        has_next = len(page_items) > limit
+        page = page_items[:limit]
+        next_cursor = None
+    else:
+        # Cursor-based pagination
+        cursor = request.query_params.get('cursor')
+        if cursor:
+            from django.utils.dateparse import parse_datetime
+            cursor_dt = parse_datetime(cursor)
+            if cursor_dt:
+                qs = qs.filter(updated_at__lt=cursor_dt)
+
+        page_items = list(qs[:limit + 1])
+        has_next = len(page_items) > limit
+        page = page_items[:limit]
+        next_cursor = page[-1].updated_at.isoformat() if has_next and page else None
+
+    serializer = AdminConfessionListSerializer(page, many=True)
+    return Response({
+        'results': serializer.data,
+        'has_next': has_next,
+        'next_cursor': next_cursor,
+        'total_count': total_count,
+        'anonymous_count': anonymous_count,
+        'non_anonymous_count': non_anonymous_count,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_confession_detail(request, uuid):
+    """Retrieve full confession detail for admin (no position gating)."""
+    user = request.user
+    if not user.role or user.role.name != 'ADMIN':
+        return Response(
+            {'error': 'Only admins can access this endpoint.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    try:
+        confession = Confession.objects.select_related('user', 'user__role').get(
+            uuid=uuid, deleted_at__isnull=True
+        )
+    except Confession.DoesNotExist:
+        return Response({'error': 'Confession not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = StaffConfessionDetailSerializer(confession)
+    return Response(serializer.data, status=status.HTTP_200_OK)

@@ -137,3 +137,18 @@ def user_detail(request, uuid):
         StaffPosition.objects.filter(user=user).delete()
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def admin_verify_password(request):
+    """Verify the current admin user's password (e.g. for revealing anonymous identities)."""
+    user = request.user
+    if not user.role or user.role.name != 'ADMIN':
+        return Response({'error': 'Only admins can access this endpoint.'}, status=status.HTTP_403_FORBIDDEN)
+
+    password = request.data.get('password', '')
+    if not password or not user.check_password(password):
+        return Response({'error': 'Incorrect password.'}, status=status.HTTP_403_FORBIDDEN)
+
+    return Response({'verified': True}, status=status.HTTP_200_OK)

@@ -12,4 +12,5 @@ urlpatterns = [
     path('auth/me', views.me, name='auth_me'),
     path('users', views.get_users, name='get_users'),
     path('users/<uuid:uuid>', views.user_detail, name='user_detail'),
+    path('admin/verify-password', views.admin_verify_password, name='admin_verify_password'),
 ]
