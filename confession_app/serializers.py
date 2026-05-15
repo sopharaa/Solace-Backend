@@ -78,13 +78,14 @@ class StudentCommentListSerializer(serializers.ModelSerializer):
     last_comment_text = serializers.SerializerMethodField()
     last_comment_at = serializers.SerializerMethodField()
     positions = serializers.SerializerMethodField()
+    states = serializers.SerializerMethodField()
 
     class Meta:
         model = Confession
         fields = [
             'uuid', 'title', 'is_anonymous', 'is_archived',
             'comment_count', 'last_comment_author', 'last_comment_text',
-            'last_comment_at', 'positions',
+            'last_comment_at', 'positions', 'states',
             'created_at', 'updated_at',
         ]
 
@@ -92,6 +93,12 @@ class StudentCommentListSerializer(serializers.ModelSerializer):
         return list(
             ConfessionPosition.objects.filter(confession=obj, deleted_at__isnull=True)
             .values_list('position__name', flat=True)
+        )
+
+    def get_states(self, obj):
+        return list(
+            ConfessionState.objects.filter(confession=obj, deleted_at__isnull=True)
+            .values_list('state__name', flat=True)
         )
 
     def get_comment_count(self, obj):

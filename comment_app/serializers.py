@@ -7,12 +7,13 @@ class CommentSerializer(serializers.ModelSerializer):
     sender_name = serializers.SerializerMethodField()
     sender_role = serializers.SerializerMethodField()
     user_uuid = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Comment
         fields = [
             'id', 'uuid', 'content', 'is_anonymous',
-            'sender_name', 'sender_role', 'user_uuid',
+            'sender_name', 'sender_role', 'user_uuid', 'avatar_url',
             'created_at', 'updated_at',
         ]
 
@@ -26,6 +27,11 @@ class CommentSerializer(serializers.ModelSerializer):
 
     def get_user_uuid(self, obj):
         return str(obj.user.uuid)
+
+    def get_avatar_url(self, obj):
+        if obj.is_anonymous:
+            return None
+        return obj.user.avatar_url
 
 
 class CreateCommentSerializer(serializers.Serializer):
