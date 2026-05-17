@@ -33,6 +33,7 @@ class User(AbstractBaseUser):
     provider_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.APPROVED)
     avatar_url = models.URLField(max_length=500, null=True, blank=True)
+    promoted_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='promoted_users')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

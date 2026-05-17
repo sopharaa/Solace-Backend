@@ -5,6 +5,7 @@ from . import views
 urlpatterns = [
     path('admin/login', views.admin_login, name='admin_login'),
     path('auth/google', views.google_login, name='google_login'),
+    path('auth/google/callback', views.google_auth_callback, name='google_auth_callback'),
 
     path('admin/logout', views.logout, name='logout'),
     path('auth/google/logout', views.logout, name='logout'),

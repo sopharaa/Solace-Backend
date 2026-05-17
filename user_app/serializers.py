@@ -11,13 +11,19 @@ class RoleInlineSerializer(serializers.Serializer):
     permission = serializers.JSONField()
 
 
+class PromotedBySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['uuid', 'name', 'email']
+
 class UserSerializer(serializers.ModelSerializer):
     role = RoleInlineSerializer(read_only=True)
     positions = serializers.SerializerMethodField()
+    promoted_by = PromotedBySerializer(read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'uuid', 'name', 'email', 'role', 'positions', 'status', 'avatar_url','created_at', 'updated_at']
+        fields = ['id', 'uuid', 'name', 'email', 'role', 'positions', 'status', 'avatar_url', 'promoted_by', 'created_at', 'updated_at']
 
     def get_positions(self, obj):
         from position_app.models import StaffPosition
