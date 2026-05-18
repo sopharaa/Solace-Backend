@@ -13,4 +13,5 @@ urlpatterns = [
     # Admin endpoints
     path('admin/confessions', views.admin_confession_list, name='admin_confession_list'),
     path('admin/confessions/<uuid:uuid>', views.admin_confession_detail, name='admin_confession_detail'),
+    path('admin/dashboard-stats', views.admin_dashboard_stats, name='admin_dashboard_stats'),
 ]

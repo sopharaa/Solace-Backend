@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'confession_state_app',
     'message_app',
     'comment_app',
+    'notification_app',
 ]
 
 MIDDLEWARE = [

@@ -27,7 +27,7 @@ class User(AbstractBaseUser):
 
     uuid = models.UUIDField(default=_uuid.uuid4, editable=False, unique=True)
     role = models.ForeignKey('role_app.Role', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=30)
     email = models.EmailField(unique=True)
     password = models.CharField(max_length=128, null=True, blank=True)
     provider_id = models.CharField(max_length=255, unique=True, null=True, blank=True)

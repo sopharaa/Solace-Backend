@@ -482,3 +482,36 @@ def admin_confession_detail(request, uuid):
 
     serializer = StaffConfessionDetailSerializer(confession)
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_dashboard_stats(request):
+    """
+    Get aggregated statistics for the admin dashboard.
+    """
+    user = request.user
+    if not user.role or user.role.name != 'ADMIN':
+        return Response(
+            {'error': 'Only admins can access this endpoint.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    from user_app.models import User
+    from comment_app.models import Comment
+    from request_app.models import Request
+    from confession_app.models import Confession
+
+    total_users = User.objects.filter(deleted_at__isnull=True).count()
+    total_confessions = Confession.objects.filter(deleted_at__isnull=True).count()
+    total_comments = Comment.objects.filter(deleted_at__isnull=True).count()
+    pending_requests = Request.objects.filter(status='PENDING', deleted_at__isnull=True).count()
+    total_sessions = total_users * 3 # Mocked sessions multiplier
+
+    return Response({
+        'total_users': total_users,
+        'total_confessions': total_confessions,
+        'total_comments': total_comments,
+        'total_sessions': total_sessions,
+        'pending_requests': pending_requests,
+    }, status=status.HTTP_200_OK)
