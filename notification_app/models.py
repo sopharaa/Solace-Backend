@@ -10,11 +10,23 @@ class Notification(models.Model):
         UNREAD = 'UNREAD', 'Unread'
         READ = 'READ', 'Read'
 
+    class Type(models.TextChoices):
+        COMMENT = 'COMMENT', 'Comment'
+        REQUEST_CONNECT = 'REQUEST_CONNECT', 'Request Connect'
+        ROLE_APPROVAL = 'ROLE_APPROVAL', 'Role Approval'
+        REQUEST_CHANGE = 'REQUEST_CHANGE', 'Request Change'
+
     id = models.AutoField(primary_key=True)
     uuid = models.UUIDField(default=_uuid.uuid4, editable=False, unique=True)
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name='notifications',
         db_column='user_id'
+    )
+    message = models.TextField(default='')
+    type = models.CharField(
+        max_length=30,
+        choices=Type.choices,
+        default=Type.COMMENT,
     )
     comment = models.ForeignKey(
         Comment, on_delete=models.CASCADE, related_name='notifications',
@@ -25,6 +37,12 @@ class Notification(models.Model):
         Request, on_delete=models.CASCADE, related_name='notifications',
         null=True, blank=True,
         db_column='request_id'
+    )
+    confession = models.ForeignKey(
+        'confession_app.Confession', on_delete=models.CASCADE,
+        related_name='notifications',
+        null=True, blank=True,
+        db_column='confession_id'
     )
     status = models.CharField(
         max_length=20,
@@ -37,6 +55,7 @@ class Notification(models.Model):
 
     class Meta:
         db_table = 'notifications'
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"Notification {self.uuid} - {self.status}"

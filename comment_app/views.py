@@ -47,6 +47,28 @@ def comment_list_create(request, uuid):
         is_anonymous=data.get('is_anonymous', False),
     )
 
+    # Send notification to the confession owner (student)
+    from notification_app.utils import create_and_send_notification, broadcast_confession_event
+    from notification_app.models import Notification as NotifModel
+
+    confession_owner = confession.user
+    if confession_owner != user:  # Don't notify yourself
+        sender_display = 'Anonymous Staff' if data.get('is_anonymous', False) else user.name
+        create_and_send_notification(
+            user=confession_owner,
+            message=f'{sender_display} commented on "{confession.title}"',
+            notification_type=NotifModel.Type.COMMENT,
+            comment=comment,
+            confession=confession,
+        )
+
+    # Broadcast real-time comment to all viewers of this confession
+    broadcast_confession_event(
+        str(confession.uuid),
+        'new_comment',
+        {'comment': CommentSerializer(comment).data},
+    )
+
     return Response(CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
 
 
@@ -68,4 +90,13 @@ def comment_delete(request, uuid):
 
     comment.deleted_at = timezone.now()
     comment.save(update_fields=['deleted_at', 'updated_at'])
+
+    # Broadcast real-time deletion to all viewers
+    from notification_app.utils import broadcast_confession_event
+    broadcast_confession_event(
+        str(comment.confession.uuid),
+        'delete_comment',
+        {'comment_uuid': str(comment.uuid)},
+    )
+
     return Response(status=status.HTTP_204_NO_CONTENT)

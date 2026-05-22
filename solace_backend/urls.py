@@ -30,4 +30,5 @@ urlpatterns = [
         path('', include('message_app.urls')),
         path('', include('comment_app.urls')),
     ])),
+    path('', include('notification_app.urls')),
 ]

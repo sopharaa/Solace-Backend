@@ -23,6 +23,14 @@ class CommentSerializer(serializers.ModelSerializer):
         return obj.user.name
 
     def get_sender_role(self, obj):
+        from position_app.models import StaffPosition
+        positions = list(
+            StaffPosition.objects.filter(user=obj.user, deleted_at__isnull=True)
+            .select_related('position')
+            .values_list('position__name', flat=True)
+        )
+        if positions:
+            return ', '.join(positions)
         return obj.user.role.name if obj.user.role else ''
 
     def get_user_uuid(self, obj):

@@ -35,6 +35,18 @@ def respond_request(request, uuid):
         
     req.status = req_status
     req.save()
+
+    # Send notification to the requesting user about approval/rejection
+    from notification_app.utils import create_and_send_notification
+    from notification_app.models import Notification as NotifModel
+
+    status_label = 'approved' if req_status == Request.Status.APPROVED else 'rejected'
+    create_and_send_notification(
+        user=req.user_id,  # The user who made the request
+        message=f'Your request has been {status_label} by admin.',
+        notification_type=NotifModel.Type.REQUEST_CHANGE,
+        request_obj=req,
+    )
     
     serializer = RequestSerializer(req)
     return Response(serializer.data, status=status.HTTP_200_OK)

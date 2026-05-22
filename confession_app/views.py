@@ -99,6 +99,31 @@ def confession_list_create(request):
         if pos_obj:
             ConfessionPosition.objects.create(confession=confession, position=pos_obj)
 
+    # Notify staff members whose positions match this confession
+    from notification_app.utils import create_and_send_notification
+    from notification_app.models import Notification as NotifModel
+    from position_app.models import StaffPosition
+
+    position_ids = ConfessionPosition.objects.filter(
+        confession=confession, deleted_at__isnull=True
+    ).values_list('position_id', flat=True)
+
+    if position_ids:
+        staff_user_ids = StaffPosition.objects.filter(
+            position_id__in=position_ids, deleted_at__isnull=True
+        ).values_list('user_id', flat=True).distinct()
+
+        from user_app.models import User
+        staff_users = User.objects.filter(id__in=staff_user_ids, deleted_at__isnull=True)
+
+        for staff_user in staff_users:
+            create_and_send_notification(
+                user=staff_user,
+                message=f'A student needs support in your area: "{title}"',
+                notification_type=NotifModel.Type.REQUEST_CONNECT,
+                confession=confession,
+            )
+
     # 5. Save the student's first message
     Message.objects.create(
         confession=confession,

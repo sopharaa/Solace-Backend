@@ -104,6 +104,19 @@ def send_message(request, uuid):
     # Update confession updated_at
     confession.save(update_fields=['updated_at'])
 
+    # Broadcast real-time messages to all viewers of this confession
+    from notification_app.utils import broadcast_confession_event
+    broadcast_confession_event(
+        str(confession.uuid),
+        'new_message',
+        {'message': MessageSerializer(student_msg).data},
+    )
+    broadcast_confession_event(
+        str(confession.uuid),
+        'new_message',
+        {'message': MessageSerializer(ai_msg).data},
+    )
+
     return Response({
         'student_message': MessageSerializer(student_msg).data,
         'ai_message': MessageSerializer(ai_msg).data,
