@@ -50,6 +50,78 @@ def _build_conversation_history(confession):
         role = 'assistant' if msg.type == Message.MessageType.AI else 'user'
         history.append({'role': role, 'content': msg.content})
     return history
+import threading
+from django.db import close_old_connections
+
+def _generate_ai_title_and_response_bg(confession_id, user_id, message_content, states, positions, is_anonymous):
+    try:
+        from .models import Confession
+        from user_app.models import User
+        from message_app.models import Message
+        from solace_backend.ai_service import generate_supportive_response, generate_confession_title
+        
+        confession = Confession.objects.get(id=confession_id)
+        user = User.objects.get(id=user_id)
+        
+        # 1. Generate title in background
+        title = 'New Confession'
+        try:
+            title = generate_confession_title(message_content)
+            confession.title = title
+            confession.save()
+        except Exception as e:
+            logger.error(f"Error generating AI title in background: {e}")
+            
+        # 2. Notify staff members with the generated title
+        from notification_app.utils import create_and_send_notification
+        from notification_app.models import Notification as NotifModel
+        from position_app.models import StaffPosition
+        
+        position_ids = ConfessionPosition.objects.filter(
+            confession=confession, deleted_at__isnull=True
+        ).values_list('position_id', flat=True)
+        
+        if position_ids:
+            staff_user_ids = StaffPosition.objects.filter(
+                position_id__in=position_ids, deleted_at__isnull=True
+            ).values_list('user_id', flat=True).distinct()
+            
+            from user_app.models import User as UserAppModel
+            staff_users = UserAppModel.objects.filter(id__in=staff_user_ids, deleted_at__isnull=True)
+            
+            for staff_user in staff_users:
+                create_and_send_notification(
+                    user=staff_user,
+                    message=f'A student needs support in your area: "{title}"',
+                    notification_type=NotifModel.Type.REQUEST_CONNECT,
+                    confession=confession,
+                )
+        
+        # 3. Generate AI response in background
+        ctx = _get_user_context(user)
+        conversation_history = [{'role': 'user', 'content': message_content}]
+        try:
+            ai_text = generate_supportive_response(
+                user_name=ctx['user_name'],
+                user_role=ctx['user_role'],
+                user_positions=ctx['user_positions'],
+                confession_states=states,
+                confession_positions=positions,
+                is_anonymous=is_anonymous,
+                conversation_history=conversation_history,
+            )
+        except Exception:
+            ai_text = "I hear you. Thank you for sharing. I'm here to support you."
+            
+        Message.objects.create(
+            confession=confession,
+            content=ai_text,
+            type=Message.MessageType.AI,
+        )
+    except Exception as e:
+        logger.error(f"Error in background AI processing: {e}")
+    finally:
+        close_old_connections()
 
 
 @api_view(['GET', 'POST'])
@@ -62,107 +134,72 @@ def confession_list_create(request):
     user = request.user
 
     if request.method == 'GET':
-        confessions = (
+        qs = (
             Confession.objects.filter(user=user, deleted_at__isnull=True, is_archived=False)
             .order_by('-updated_at')
         )
-        serializer = ConfessionListSerializer(confessions, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+
+        cursor = request.query_params.get('cursor')
+        if cursor:
+            from django.utils.dateparse import parse_datetime
+            cursor_dt = parse_datetime(cursor)
+            if cursor_dt:
+                qs = qs.filter(updated_at__lt=cursor_dt)
+
+        limit = min(int(request.query_params.get('limit', 10)), 100)
+        page = list(qs[:limit + 1])
+        has_next = len(page) > limit
+        page = page[:limit]
+
+        serializer = ConfessionListSerializer(page, many=True)
+        return Response({
+            'results': serializer.data,
+            'has_next': has_next,
+            'next_cursor': page[-1].updated_at.isoformat() if has_next and page else None,
+        }, status=status.HTTP_200_OK)
 
     # POST — create confession
     ser = CreateConfessionSerializer(data=request.data)
     ser.is_valid(raise_exception=True)
     data = ser.validated_data
 
-    # 1. Generate AI title from the first message
-    try:
-        title = generate_confession_title(data['message'])
-    except Exception:
-        title = 'New Confession'
-
-    # 2. Create the confession
+    # 1. Create the confession instantly with default/placeholder title
     confession = Confession.objects.create(
         user=user,
-        title=title,
+        title='New Confession',
         is_anonymous=data.get('is_anonymous', False),
     )
 
-    # 3. Attach confession states
-    for state_name in data.get('states', []):
+    # 2. Attach confession states
+    states = data.get('states', [])
+    for state_name in states:
         state_obj = State.objects.filter(name=state_name, is_active=True, deleted_at__isnull=True).first()
         if state_obj:
             ConfessionState.objects.create(confession=confession, state=state_obj)
 
-    # 4. Attach confession positions
-    for pos_name in data.get('positions', []):
+    # 3. Attach confession positions
+    positions = data.get('positions', [])
+    for pos_name in positions:
         pos_obj = Position.objects.filter(name=pos_name, is_active=True, deleted_at__isnull=True).first()
         if pos_obj:
             ConfessionPosition.objects.create(confession=confession, position=pos_obj)
 
-    # Notify staff members whose positions match this confession
-    from notification_app.utils import create_and_send_notification
-    from notification_app.models import Notification as NotifModel
-    from position_app.models import StaffPosition
-
-    position_ids = ConfessionPosition.objects.filter(
-        confession=confession, deleted_at__isnull=True
-    ).values_list('position_id', flat=True)
-
-    if position_ids:
-        staff_user_ids = StaffPosition.objects.filter(
-            position_id__in=position_ids, deleted_at__isnull=True
-        ).values_list('user_id', flat=True).distinct()
-
-        from user_app.models import User
-        staff_users = User.objects.filter(id__in=staff_user_ids, deleted_at__isnull=True)
-
-        for staff_user in staff_users:
-            create_and_send_notification(
-                user=staff_user,
-                message=f'A student needs support in your area: "{title}"',
-                notification_type=NotifModel.Type.REQUEST_CONNECT,
-                confession=confession,
-            )
-
-    # 5. Save the student's first message
+    # 4. Save the student's first message instantly
     Message.objects.create(
         confession=confession,
         content=data['message'],
         type=Message.MessageType.STUDENT,
     )
 
-    # 6. Generate AI response
-    ctx = _get_user_context(user)
-    confession_states = list(
-        ConfessionState.objects.filter(confession=confession, deleted_at__isnull=True)
-        .values_list('state__name', flat=True)
+    # 5. Start background thread to generate AI title, notify staff, and generate supportive AI response
+    thread = threading.Thread(
+        target=_generate_ai_title_and_response_bg,
+        args=(confession.id, user.id, data['message'], states, positions, data.get('is_anonymous', False))
     )
-    confession_positions = list(
-        ConfessionPosition.objects.filter(confession=confession, deleted_at__isnull=True)
-        .values_list('position__name', flat=True)
-    )
+    thread.daemon = True
+    thread.start()
 
-    conversation_history = [{'role': 'user', 'content': data['message']}]
-    try:
-        ai_text = generate_supportive_response(
-            user_name=ctx['user_name'],
-            user_role=ctx['user_role'],
-            user_positions=ctx['user_positions'],
-            confession_states=confession_states,
-            confession_positions=confession_positions,
-            is_anonymous=data.get('is_anonymous', False),
-            conversation_history=conversation_history,
-        )
-    except Exception:
-        ai_text = "I hear you. Thank you for sharing. I'm here to support you."
-
-    Message.objects.create(
-        confession=confession,
-        content=ai_text,
-        type=Message.MessageType.AI,
-    )
-
-    # Return full confession with messages
+    # 6. Return full confession with messages instantly
     result = ConfessionDetailSerializer(confession).data
     return Response(result, status=status.HTTP_201_CREATED)
 
