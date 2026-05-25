@@ -385,3 +385,68 @@ class AdminConfessionListSerializer(serializers.ModelSerializer):
             type='Student'
         ).order_by('-created_at').first()
         return last.content if last else None
+
+
+class AdminConfessionDetailSerializer(serializers.ModelSerializer):
+    """Full confession detail for admin — always reveals real student identity."""
+    student_name = serializers.SerializerMethodField()
+    student_email = serializers.SerializerMethodField()
+    student_avatar = serializers.SerializerMethodField()
+    is_student_anonymous = serializers.BooleanField(source='is_anonymous')
+    emotions = serializers.SerializerMethodField()
+    encouragements = serializers.SerializerMethodField()
+    expressions = serializers.SerializerMethodField()
+    comments = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Confession
+        fields = [
+            'id', 'uuid', 'title', 'student_name', 'student_email',
+            'student_avatar', 'is_student_anonymous',
+            'emotions', 'encouragements', 'expressions', 'comments',
+            'created_at', 'updated_at',
+        ]
+
+    def get_student_name(self, obj):
+        """Always returns real name — admin only."""
+        return obj.user.name
+
+    def get_student_email(self, obj):
+        """Always returns real email — admin only."""
+        return obj.user.email
+
+    def get_student_avatar(self, obj):
+        """Always returns avatar — admin only."""
+        return obj.user.avatar_url
+
+    def get_emotions(self, obj):
+        return list(
+            ConfessionState.objects.filter(confession=obj, deleted_at__isnull=True)
+            .values_list('state__name', flat=True)
+        )
+
+    def get_encouragements(self, obj):
+        return list(
+            ConfessionPosition.objects.filter(confession=obj, deleted_at__isnull=True)
+            .values_list('position__name', flat=True)
+        )
+
+    def get_expressions(self, obj):
+        """Return student messages only."""
+        msgs = Message.objects.filter(
+            confession=obj, deleted_at__isnull=True,
+            type='Student'
+        ).order_by('created_at')
+        return [
+            {
+                'id': str(m.uuid),
+                'content': m.content,
+                'created_at': m.created_at,
+            }
+            for m in msgs
+        ]
+
+    def get_comments(self, obj):
+        from comment_app.serializers import CommentSerializer
+        comments = obj.comments.filter(deleted_at__isnull=True).order_by('created_at')
+        return CommentSerializer(comments, many=True).data

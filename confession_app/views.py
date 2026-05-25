@@ -15,6 +15,7 @@ from .serializers import (
     StudentCommentListSerializer,
     StudentCommentDetailSerializer,
     AdminConfessionListSerializer,
+    AdminConfessionDetailSerializer,
 )
 from message_app.models import Message
 from confession_state_app.models import ConfessionState
@@ -542,7 +543,7 @@ def admin_confession_detail(request, uuid):
     except Confession.DoesNotExist:
         return Response({'error': 'Confession not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    serializer = StaffConfessionDetailSerializer(confession)
+    serializer = AdminConfessionDetailSerializer(confession)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
