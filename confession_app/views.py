@@ -525,10 +525,10 @@ def admin_confession_list(request):
     }, status=status.HTTP_200_OK)
 
 
-@api_view(['GET'])
+@api_view(['GET', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def admin_confession_detail(request, uuid):
-    """Retrieve full confession detail for admin (no position gating)."""
+    """Retrieve or soft-delete a confession for admin (no position gating)."""
     user = request.user
     if not user.role or user.role.name != 'ADMIN':
         return Response(
@@ -542,6 +542,11 @@ def admin_confession_detail(request, uuid):
         )
     except Confession.DoesNotExist:
         return Response({'error': 'Confession not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'DELETE':
+        confession.deleted_at = timezone.now()
+        confession.save(update_fields=['deleted_at', 'updated_at'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     serializer = AdminConfessionDetailSerializer(confession)
     return Response(serializer.data, status=status.HTTP_200_OK)

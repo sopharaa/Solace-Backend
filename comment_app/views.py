@@ -75,16 +75,17 @@ def comment_list_create(request, uuid):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def comment_delete(request, uuid):
-    """Soft-delete a comment (only the author can delete their own)."""
+    """Soft-delete a comment (author can delete own, admin can delete any)."""
     user = request.user
     try:
         comment = Comment.objects.get(uuid=uuid, deleted_at__isnull=True)
     except Comment.DoesNotExist:
         return Response({'error': 'Comment not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    if comment.user != user:
+    is_admin = user.role and user.role.name == 'ADMIN'
+    if not is_admin:
         return Response(
-            {'error': 'You can only delete your own comments.'},
+            {'error': 'Only administrators can delete comments.'},
             status=status.HTTP_403_FORBIDDEN,
         )
 
