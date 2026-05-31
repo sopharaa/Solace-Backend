@@ -38,7 +38,7 @@ def _send_first_comment_email_sync(confession, comment, commenter_display_name):
         logger.warning(f'No email for user {recipient.id}, skipping first-comment email.')
         return
 
-    subject = f'New Response on Your Confession — "{confession.title}"'
+    subject = f'New Comment on Your Confession — "{confession.title}"'
 
     context = {
         'user_name': recipient.name,
