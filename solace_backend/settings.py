@@ -101,7 +101,14 @@ if REDIS_URL:
         'default': {
             'BACKEND': 'channels_redis.core.RedisChannelLayer',
             'CONFIG': {
-                'hosts': [REDIS_URL],
+                'hosts': [{
+                    'address': REDIS_URL,
+                    'ssl_cert_reqs': None,
+                    'socket_timeout': 30,
+                    'socket_connect_timeout': 10,
+                    'socket_keepalive': True,
+                    'retry_on_timeout': True,
+                }],
             },
         },
     }
