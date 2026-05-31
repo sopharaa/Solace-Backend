@@ -78,6 +78,20 @@ def select_role(request):
         else 'Role request submitted, waiting for admin approval'
     )
 
+    if user.status != User.Status.APPROVED:
+        # Send notifications to all admins
+        from user_app.models import User as UserAppModel
+        from notification_app.utils import create_and_send_notification
+        from notification_app.models import Notification as NotifModel
+        
+        admins = UserAppModel.objects.filter(role__name='ADMIN', deleted_at__isnull=True)
+        for admin in admins:
+            create_and_send_notification(
+                user=admin,
+                message=f'User {user.name} has requested Staff role approval.',
+                notification_type=NotifModel.Type.ROLE_APPROVAL,
+            )
+
     return Response({
         'message': message,
         'user': UserSerializer(user).data,

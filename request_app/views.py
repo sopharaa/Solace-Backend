@@ -17,7 +17,22 @@ def get_all_requests(request):
 def create_request(request):
     serializer = RequestSerializer(data=request.data)
     if serializer.is_valid():
-        serializer.save(user_id=request.user)
+        req = serializer.save(user_id=request.user)
+        
+        # Send notifications to all admins
+        from user_app.models import User
+        from notification_app.utils import create_and_send_notification
+        from notification_app.models import Notification as NotifModel
+        
+        admins = User.objects.filter(role__name='ADMIN', deleted_at__isnull=True)
+        for admin in admins:
+            create_and_send_notification(
+                user=admin,
+                message=f'User {request.user.name} has submitted a new change request.',
+                notification_type=NotifModel.Type.REQUEST_CHANGE,
+                request_obj=req,
+            )
+            
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -47,6 +62,10 @@ def respond_request(request, uuid):
         notification_type=NotifModel.Type.REQUEST_CHANGE,
         request_obj=req,
     )
+
+    # Send email notification about approval/rejection
+    from mail_app.utils import send_request_status_email
+    send_request_status_email(req, status_label)
     
     serializer = RequestSerializer(req)
     return Response(serializer.data, status=status.HTTP_200_OK)

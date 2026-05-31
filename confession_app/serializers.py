@@ -304,6 +304,7 @@ class StaffConfessionDetailSerializer(serializers.ModelSerializer):
             {
                 'id': str(m.uuid),
                 'content': m.content,
+                'type': m.type,
                 'created_at': m.created_at,
             }
             for m in msgs
@@ -328,6 +329,7 @@ class AdminConfessionListSerializer(serializers.ModelSerializer):
     comment_count = serializers.SerializerMethodField()
     expression_count = serializers.SerializerMethodField()
     last_student_expression = serializers.SerializerMethodField()
+    last_ai_response = serializers.SerializerMethodField()
 
     class Meta:
         model = Confession
@@ -336,7 +338,7 @@ class AdminConfessionListSerializer(serializers.ModelSerializer):
             'student_name', 'real_student_name', 'student_email', 'student_avatar',
             'is_anonymous', 'is_archived',
             'emotions', 'encouragements',
-            'comment_count', 'expression_count', 'last_student_expression',
+            'comment_count', 'expression_count', 'last_student_expression', 'last_ai_response',
             'created_at', 'updated_at',
         ]
 
@@ -386,6 +388,13 @@ class AdminConfessionListSerializer(serializers.ModelSerializer):
         ).order_by('-created_at').first()
         return last.content if last else None
 
+    def get_last_ai_response(self, obj):
+        last = Message.objects.filter(
+            confession=obj, deleted_at__isnull=True,
+            type='AI'
+        ).order_by('-created_at').first()
+        return last.content if last else None
+
 
 class AdminConfessionDetailSerializer(serializers.ModelSerializer):
     """Full confession detail for admin — always reveals real student identity."""
@@ -432,15 +441,15 @@ class AdminConfessionDetailSerializer(serializers.ModelSerializer):
         )
 
     def get_expressions(self, obj):
-        """Return student messages only."""
+        """Return student and AI messages for Admin."""
         msgs = Message.objects.filter(
-            confession=obj, deleted_at__isnull=True,
-            type='Student'
+            confession=obj, deleted_at__isnull=True
         ).order_by('created_at')
         return [
             {
                 'id': str(m.uuid),
                 'content': m.content,
+                'type': m.type,
                 'created_at': m.created_at,
             }
             for m in msgs

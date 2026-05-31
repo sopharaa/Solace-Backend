@@ -557,6 +557,7 @@ def admin_confession_detail(request, uuid):
 def admin_dashboard_stats(request):
     """
     Get aggregated statistics for the admin dashboard.
+    Optional: ?days=7|30|90 to filter by time range (default: all time)
     """
     user = request.user
     if not user.role or user.role.name != 'ADMIN':
@@ -569,12 +570,151 @@ def admin_dashboard_stats(request):
     from comment_app.models import Comment
     from request_app.models import Request
     from confession_app.models import Confession
+    from confession_state_app.models import ConfessionState
+    from state_app.models import State
+    from django.db.models import Count
+    from django.db.models.functions import TruncDate
 
-    total_users = User.objects.filter(deleted_at__isnull=True).count()
-    total_confessions = Confession.objects.filter(deleted_at__isnull=True).count()
-    total_comments = Comment.objects.filter(deleted_at__isnull=True).count()
+    days_param = request.query_params.get('days', 'all')
+    since = None
+    if days_param in ('7', '30', '90'):
+        since = timezone.now() - timezone.timedelta(days=int(days_param))
+
+    def _qs(model, **extra_filters):
+        qs = model.objects.filter(deleted_at__isnull=True, **extra_filters)
+        if since:
+            qs = qs.filter(created_at__gte=since)
+        return qs
+
+    total_users = _qs(User).count()
+    total_confessions = _qs(Confession).count()
+    total_comments = _qs(Comment).count()
     pending_requests = Request.objects.filter(status='PENDING', deleted_at__isnull=True).count()
-    total_sessions = total_users * 3 # Mocked sessions multiplier
+    # Sessions: treat each confession as a session
+    total_sessions = total_confessions
+
+    # Confession queryset for all charts
+    confession_qs = _qs(Confession)
+
+    # User growth: group users by created_at date
+    if since:
+        user_growth_qs = (
+            User.objects.filter(deleted_at__isnull=True, created_at__gte=since)
+            .annotate(date=TruncDate('created_at'))
+            .values('date', 'role__name')
+            .annotate(count=Count('id'))
+            .order_by('date')
+        )
+    else:
+        user_growth_qs = (
+            User.objects.filter(deleted_at__isnull=True)
+            .annotate(date=TruncDate('created_at'))
+            .values('date', 'role__name')
+            .annotate(count=Count('id'))
+            .order_by('date')
+        )
+
+    # Build user growth chart data grouped by date
+    growth_by_date = {}
+    for row in user_growth_qs:
+        d = str(row['date'])
+        role = (row['role__name'] or 'Student').lower()
+        if d not in growth_by_date:
+            growth_by_date[d] = {'date': d, 'students': 0, 'staff': 0, 'total': 0}
+        if role == 'student' or role is None:
+            growth_by_date[d]['students'] += row['count']
+        else:
+            growth_by_date[d]['staff'] += row['count']
+        growth_by_date[d]['total'] += row['count']
+    user_growth = sorted(growth_by_date.values(), key=lambda x: x['date'])
+
+    # Confession trend: group confessions by date
+    confession_trend = [
+        {'date': str(r['date']), 'sessions': r['count']}
+        for r in confession_qs
+        .annotate(date=TruncDate('created_at'))
+        .values('date')
+        .annotate(count=Count('id'))
+        .order_by('date')
+    ]
+
+    # Role distribution (always all-time — shows current user breakdown)
+    role_distribution = [
+        {'name': r['role__name'] or 'Student', 'value': r['count']}
+        for r in User.objects.filter(deleted_at__isnull=True)
+        .values('role__name')
+        .annotate(count=Count('id'))
+    ]
+
+    # Get active states for Mental State Trends
+    active_states = list(
+        State.objects.filter(is_active=True, deleted_at__isnull=True)
+        .values_list('name', flat=True)
+    )
+
+    # ── Mental state trend: grouped by date + emotion ────────────
+    state_qs = (
+        ConfessionState.objects.filter(
+            confession__in=confession_qs,
+            deleted_at__isnull=True,
+        )
+        .select_related('state')
+        .annotate(date=TruncDate('confession__created_at'))
+        .values('date', 'state__name')
+        .annotate(count=Count('id'))
+        .order_by('date')
+    )
+    emotion_trend_by_date = {}
+    for row in state_qs:
+        d = str(row['date'])
+        emotion = row['state__name'] or 'Other'
+        if d not in emotion_trend_by_date:
+            emotion_trend_by_date[d] = {'date': d}
+            for state_name in active_states:
+                emotion_trend_by_date[d][state_name] = 0
+            emotion_trend_by_date[d]['Other'] = 0
+        emotion_trend_by_date[d][emotion] = emotion_trend_by_date[d].get(emotion, 0) + row['count']
+    mental_state_trend = sorted(emotion_trend_by_date.values(), key=lambda x: x['date'])
+
+    # ── Emotion distribution ─────────────────────────────────────
+    state_counts = {name: 0 for name in active_states}
+    state_counts['Other'] = 0
+
+    emotion_dist_qs = (
+        ConfessionState.objects.filter(
+            confession__in=confession_qs,
+            deleted_at__isnull=True,
+        )
+        .values('state__name')
+        .annotate(count=Count('id'))
+    )
+    for r in emotion_dist_qs:
+        name = r['state__name'] or 'Other'
+        if name in state_counts:
+            state_counts[name] += r['count']
+        else:
+            state_counts['Other'] += r['count']
+
+    emotion_distribution = [
+        {'name': name, 'value': count}
+        for name, count in state_counts.items()
+        if name != 'Other' or count > 0
+    ]
+
+    # ── Recent confessions: latest 10 platform-wide ──────────────
+    recent_confessions = []
+    for c in confession_qs.select_related('user').order_by('-created_at')[:10]:
+        emotions = list(
+            ConfessionState.objects.filter(confession=c, deleted_at__isnull=True)
+            .values_list('state__name', flat=True)
+        )
+        recent_confessions.append({
+            'uuid': str(c.uuid),
+            'title': c.title,
+            'student': c.user.name if not c.is_anonymous else 'Anonymous',
+            'emotion': emotions[0] if emotions else 'Other',
+            'created_at': c.created_at.isoformat(),
+        })
 
     return Response({
         'total_users': total_users,
@@ -582,4 +722,169 @@ def admin_dashboard_stats(request):
         'total_comments': total_comments,
         'total_sessions': total_sessions,
         'pending_requests': pending_requests,
+        'user_growth': user_growth,
+        'confession_trend': confession_trend,
+        'role_distribution': role_distribution,
+        'mental_state_trend': mental_state_trend,
+        'emotion_distribution': emotion_distribution,
+        'recent_confessions': recent_confessions,
+        'active_states': active_states,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def staff_dashboard_stats(request):
+    """
+    Get aggregated statistics for the staff dashboard.
+    Optional: ?days=7|30|90 to filter by time range (default: all time)
+    """
+    user = request.user
+    if user.role and user.role.name in ('Student', 'STUDENT'):
+        return Response(
+            {'error': 'Students cannot access this endpoint.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    from position_app.models import StaffPosition
+    from confession_app.models import Confession
+    from user_app.models import User
+    from comment_app.models import Comment
+    from confession_state_app.models import ConfessionState
+    from state_app.models import State
+    from django.db.models import Count
+    from django.db.models.functions import TruncDate
+
+    days_param = request.query_params.get('days', 'all')
+    since = None
+    if days_param in ('7', '30', '90'):
+        since = timezone.now() - timezone.timedelta(days=int(days_param))
+
+    # Get position IDs for this staff member
+    staff_pos_ids = set(
+        StaffPosition.objects.filter(user=user, deleted_at__isnull=True)
+        .values_list('position_id', flat=True)
+    )
+
+    # Confessions visible to this staff member
+    if staff_pos_ids:
+        visible_confession_ids = set(
+            ConfessionPosition.objects.filter(
+                deleted_at__isnull=True, position_id__in=staff_pos_ids
+            ).values_list('confession_id', flat=True)
+        )
+        confession_qs = Confession.objects.filter(
+            id__in=visible_confession_ids, deleted_at__isnull=True
+        )
+    else:
+        confession_qs = Confession.objects.none()
+
+    if since:
+        confession_qs = confession_qs.filter(created_at__gte=since)
+
+    total_confessions = confession_qs.count()
+
+    # Student count (unique students who submitted visible confessions)
+    total_students = confession_qs.values('user_id').distinct().count()
+
+    # Comment count by this staff member
+    comment_qs = Comment.objects.filter(user=user, deleted_at__isnull=True)
+    if since:
+        comment_qs = comment_qs.filter(created_at__gte=since)
+    total_comments = comment_qs.count()
+
+    # Get active states for Mental State Trends
+    active_states = list(
+        State.objects.filter(is_active=True, deleted_at__isnull=True)
+        .values_list('name', flat=True)
+    )
+
+    # Mental state trend: group by date + emotion
+    emotion_confession_ids = (
+        confession_qs.values_list('id', flat=True)
+    )
+    state_qs = (
+        ConfessionState.objects.filter(
+            confession_id__in=emotion_confession_ids,
+            deleted_at__isnull=True,
+        )
+        .select_related('state')
+        .annotate(date=TruncDate('confession__created_at'))
+        .values('date', 'state__name')
+        .annotate(count=Count('id'))
+        .order_by('date')
+    )
+
+    emotion_trend_by_date = {}
+    for row in state_qs:
+        d = str(row['date'])
+        emotion = row['state__name'] or 'Other'
+        if d not in emotion_trend_by_date:
+            emotion_trend_by_date[d] = {'date': d}
+            for state_name in active_states:
+                emotion_trend_by_date[d][state_name] = 0
+            emotion_trend_by_date[d]['Other'] = 0
+        emotion_trend_by_date[d][emotion] = emotion_trend_by_date[d].get(emotion, 0) + row['count']
+    mental_state_trend = sorted(emotion_trend_by_date.values(), key=lambda x: x['date'])
+
+    # Weekly confessions
+    weekly_qs = (
+        confession_qs
+        .annotate(date=TruncDate('created_at'))
+        .values('date')
+        .annotate(count=Count('id'))
+        .order_by('date')
+    )
+    weekly_confessions = [{'date': str(r['date']), 'count': r['count']} for r in weekly_qs]
+
+    # Emotion distribution (all time for visible confessions)
+    state_counts = {name: 0 for name in active_states}
+    state_counts['Other'] = 0
+
+    emotion_dist_qs = (
+        ConfessionState.objects.filter(
+            confession__in=confession_qs,
+            deleted_at__isnull=True,
+        )
+        .values('state__name')
+        .annotate(count=Count('id'))
+    )
+    for r in emotion_dist_qs:
+        name = r['state__name'] or 'Other'
+        if name in state_counts:
+            state_counts[name] += r['count']
+        else:
+            state_counts['Other'] += r['count']
+
+    emotion_distribution = [
+        {'name': name, 'value': count}
+        for name, count in state_counts.items()
+        if name != 'Other' or count > 0
+    ]
+
+    # Recent confessions (last 10)
+    recent_qs = confession_qs.select_related('user').order_by('-created_at')[:10]
+    recent_confessions = []
+    for c in recent_qs:
+        emotions = list(
+            ConfessionState.objects.filter(confession=c, deleted_at__isnull=True)
+            .values_list('state__name', flat=True)
+        )
+        recent_confessions.append({
+            'uuid': str(c.uuid),
+            'title': c.title,
+            'student': c.user.name if not c.is_anonymous else 'Anonymous',
+            'emotion': emotions[0] if emotions else 'Other',
+            'created_at': c.created_at.isoformat(),
+        })
+
+    return Response({
+        'total_confessions': total_confessions,
+        'total_students': total_students,
+        'total_comments': total_comments,
+        'mental_state_trend': mental_state_trend,
+        'weekly_confessions': weekly_confessions,
+        'emotion_distribution': emotion_distribution,
+        'recent_confessions': recent_confessions,
+        'active_states': active_states,
     }, status=status.HTTP_200_OK)
