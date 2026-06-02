@@ -88,7 +88,7 @@ def select_role(request):
         for admin in admins:
             create_and_send_notification(
                 user=admin,
-                message=f'User {user.name} has requested Staff role approval.',
+                message=f'{user.name} has requested Staff role approval.',
                 notification_type=NotifModel.Type.ROLE_APPROVAL,
             )
 
@@ -132,6 +132,21 @@ def review_role_request(request, uuid):
     )
     serializer.is_valid(raise_exception=True)
     updated_user = serializer.save()
+
+    # Send notification to the requesting user about approval/rejection
+    from notification_app.utils import create_and_send_notification
+    from notification_app.models import Notification as NotifModel
+
+    status_label = updated_user.status.lower()  # 'approved' or 'rejected'
+    create_and_send_notification(
+        user=updated_user,
+        message=f'Your staff role request has been {status_label} by admin.',
+        notification_type=NotifModel.Type.ROLE_APPROVAL,
+    )
+
+    # Send email notification about approval/rejection
+    from mail_app.utils import send_user_status_email
+    send_user_status_email(updated_user.email, updated_user.name, updated_user.status)
 
     return Response({
         'message': f'Role request {updated_user.status.lower()}',

@@ -43,6 +43,8 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError('Invalid email or password.')
         if not user.is_active:
             raise serializers.ValidationError('Account is disabled.')
+        if user.status == User.Status.BANNED:
+            raise serializers.ValidationError('This account has been banned.')
         data['user'] = user
         return data
 
@@ -65,31 +67,39 @@ class GoogleLoginSerializer(serializers.Serializer):
 
         return data  # contains sub, email, name, picture, etc.
 
+    def validate(self, data):
+        userinfo = data.get('id_token')
+        if userinfo:
+            email = userinfo.get('email')
+            user = User.objects.filter(email=email).first()
+            if user and user.status == User.Status.BANNED:
+                raise serializers.ValidationError('This account has been banned.')
+        return data
+
     def create(self, validated_data):
         userinfo = validated_data['id_token']
         email = userinfo['email']
         google_id = userinfo['sub']
 
-        from django.utils import timezone
-        from position_app.models import StaffPosition
 
         user = User.objects.filter(email=email).first()
         if user:
             if user.deleted_at is not None:
-                # Admin soft-deleted this user — restore as a brand-new user:
-                # clear deletion marker, wipe role, reset status, clear positions
-                user.deleted_at = None
-                user.role = None
-                user.status = User.Status.APPROVED
-                user.is_active = True
-                if not user.provider_id:
-                    user.provider_id = google_id
-                user.save(update_fields=[
-                    'deleted_at', 'role', 'status', 'is_active', 'provider_id', 'updated_at'
-                ])
-                # Hard-delete all staff position assignments so they start clean
-                StaffPosition.objects.filter(user=user).delete()
-                return user
+                # Anonymize old record's unique fields so a new record can be created
+                deleted_ts = int(user.deleted_at.timestamp())
+                user.email = f"{user.email}_deleted_{deleted_ts}"
+                if user.provider_id:
+                    user.provider_id = f"{user.provider_id}_deleted_{deleted_ts}"
+                user.save(update_fields=['email', 'provider_id', 'updated_at'])
+
+                # Create a brand-new user record
+                return User.objects.create_user(
+                    email=email,
+                    name=userinfo.get('name', ''),
+                    provider_id=google_id,
+                    avatar_url=userinfo.get('picture', ''),
+                    status=User.Status.APPROVED,
+                )
 
             # Existing non-deleted user — normal login
             if not user.provider_id:

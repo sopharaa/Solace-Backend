@@ -12,3 +12,14 @@ class CustomJWTAuthentication(JWTAuthentication):
             raise AuthenticationFailed('Token has been blacklisted.')
 
         return validated_token
+
+    def get_user(self, validated_token):
+        user = super().get_user(validated_token)
+        if not user.is_active:
+            raise AuthenticationFailed('User is inactive.')
+        if user.status == 'BANNED':
+            raise AuthenticationFailed('User has been banned.')
+        if user.deleted_at is not None:
+            raise AuthenticationFailed('User account has been deleted.')
+        return user
+

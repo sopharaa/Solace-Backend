@@ -28,7 +28,7 @@ def create_request(request):
         for admin in admins:
             create_and_send_notification(
                 user=admin,
-                message=f'User {request.user.name} has submitted a new change request.',
+                message=f'{request.user.name} has submitted a new change request.',
                 notification_type=NotifModel.Type.REQUEST_CHANGE,
                 request_obj=req,
             )
@@ -65,7 +65,13 @@ def respond_request(request, uuid):
 
     # Send email notification about approval/rejection
     from mail_app.utils import send_request_status_email
-    send_request_status_email(req, status_label)
+    send_request_status_email(
+        user_email=req.user_id.email,
+        user_name=req.user_id.name,
+        request_uuid=str(req.uuid),
+        request_description=req.description,
+        new_status=status_label
+    )
     
     serializer = RequestSerializer(req)
     return Response(serializer.data, status=status.HTTP_200_OK)

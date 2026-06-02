@@ -9,12 +9,12 @@ def create_admin_user(apps, schema_editor):
     admin_role = Role.objects.get(name='ADMIN')
 
     User.objects.get_or_create(
-        email='admin@gmail.com',
+        email='solace-admin@gmail.com',
         defaults={
             'name': 'Admin',
-            'password': make_password('12345phara'),
+            'password': make_password('12345solace12345'),
             'role': admin_role,
-            'status': 'ACTIVE',
+            'status': 'APPROVED',
             'is_staff': True,
             'is_superuser': True,
             'is_active': True,
@@ -24,7 +24,7 @@ def create_admin_user(apps, schema_editor):
 
 def remove_admin_user(apps, schema_editor):
     User = apps.get_model('users', 'User')
-    User.objects.filter(email='admin@gmail.com').delete()
+    User.objects.filter(email='solace-admin@gmail.com').delete()
 
 
 class Migration(migrations.Migration):

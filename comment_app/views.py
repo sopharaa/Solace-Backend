@@ -68,7 +68,14 @@ def comment_list_create(request, uuid):
         ).count()
         if first_comment_count == 1:
             from mail_app.utils import send_first_comment_email
-            send_first_comment_email(confession, comment, sender_display)
+            send_first_comment_email(
+                recipient_email=confession_owner.email,
+                recipient_name=confession_owner.name,
+                confession_title=confession.title,
+                commenter_name=sender_display,
+                comment_content=comment.content,
+                confession_uuid=str(confession.uuid)
+            )
 
     # Broadcast real-time comment to all viewers of this confession
     broadcast_confession_event(

@@ -101,22 +101,27 @@ def google_auth_callback(request):
     google_id = userinfo.get('sub', '')
 
     # Find or create user (same logic as GoogleLoginSerializer.create)
-    from django.utils import timezone
-    from position_app.models import StaffPosition
 
     user = User.objects.filter(email=email).first()
     if user:
+        if user.status == User.Status.BANNED:
+            return Response({'error': 'This account has been banned.'}, status=status.HTTP_403_FORBIDDEN)
         if user.deleted_at is not None:
-            user.deleted_at = None
-            user.role = None
-            user.status = User.Status.APPROVED
-            user.is_active = True
-            if not user.provider_id:
-                user.provider_id = google_id
-            user.save(update_fields=[
-                'deleted_at', 'role', 'status', 'is_active', 'provider_id', 'updated_at'
-            ])
-            StaffPosition.objects.filter(user=user).delete()
+            # Anonymize old record's unique fields so a new record can be created
+            deleted_ts = int(user.deleted_at.timestamp())
+            user.email = f"{user.email}_deleted_{deleted_ts}"
+            if user.provider_id:
+                user.provider_id = f"{user.provider_id}_deleted_{deleted_ts}"
+            user.save(update_fields=['email', 'provider_id', 'updated_at'])
+
+            # Create a brand-new user record
+            user = User.objects.create_user(
+                email=email,
+                name=userinfo.get('name', ''),
+                provider_id=google_id,
+                avatar_url=userinfo.get('picture', ''),
+                status=User.Status.APPROVED,
+            )
         else:
             if not user.provider_id:
                 user.provider_id = google_id
@@ -150,7 +155,7 @@ def logout(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_users(request):
-    users = User.objects.all().order_by('-created_at')
+    users = User.objects.filter(deleted_at__isnull=True).order_by('-created_at')
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -197,8 +202,19 @@ def user_detail(request, uuid):
             if not admin_password or not request.user.check_password(admin_password):
                 return Response({'error': 'Invalid admin password. Verification failed.'}, status=status.HTTP_403_FORBIDDEN)
                 
+        old_status = user.status
         if 'status' in request.data:
-            user.status = request.data['status'].upper()
+            new_status = request.data['status'].upper()
+            user.status = new_status
+            if new_status == 'BANNED':
+                user.is_active = False
+            elif new_status == 'APPROVED':
+                user.is_active = True
+
+            if old_status.upper() == 'PENDING' and new_status in ['APPROVED', 'REJECTED']:
+                from mail_app.utils import send_user_status_email
+                send_user_status_email(user, new_status)
+
         if 'role_id' in request.data:
             from role_app.models import Role
             role = get_object_or_404(Role, uuid=request.data['role_id'])
@@ -239,7 +255,8 @@ def user_detail(request, uuid):
         user.deleted_at = timezone.now()
         user.role = None
         user.status = User.Status.APPROVED
-        user.save(update_fields=['deleted_at', 'role', 'status', 'updated_at'])
+        user.is_active = False
+        user.save(update_fields=['deleted_at', 'role', 'status', 'is_active', 'updated_at'])
 
         # Remove all position assignments
         StaffPosition.objects.filter(user=user).delete()
