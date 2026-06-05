@@ -91,6 +91,7 @@ def send_message(request, uuid):
             confession_positions=confession_positions,
             is_anonymous=confession.is_anonymous,
             conversation_history=conversation_history,
+            user_id=user.id,
         )
     except Exception:
         ai_text = "Thank you for sharing. I'm here to listen and support you."

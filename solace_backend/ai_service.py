@@ -2,6 +2,9 @@
 AI Service — calls OpenRouter (ChatCompletion-compatible) for supportive responses.
 """
 import logging
+import threading
+import time
+from collections import deque
 from decouple import config
 import requests
 
@@ -10,13 +13,52 @@ logger = logging.getLogger(__name__)
 OPENROUTER_API_KEY = config('OPENROUTER_API_KEY')
 OPENROUTER_MODEL = config('OPENROUTER_MODEL')
 OPENROUTER_URL = config('OPENROUTER_URL')
+AI_RATE_LIMIT_PER_MINUTE = int(config('AI_RATE_LIMIT_PER_MINUTE', default='10'))
 
 
-def _call_openrouter(messages: list[dict], max_tokens: int = 512) -> str:
+class _PerUserRateLimiter:
+    """Thread-safe sliding-window rate limiter, tracked per user."""
+
+    def __init__(self, max_calls: int, window_seconds: int = 60):
+        self._max_calls = max_calls
+        self._window = window_seconds
+        self._user_timestamps: dict[int, deque] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, user_id: int) -> bool:
+        """Return True if the call is allowed for this user, False if rate-limited."""
+        now = time.monotonic()
+        with self._lock:
+            if user_id not in self._user_timestamps:
+                self._user_timestamps[user_id] = deque()
+            timestamps = self._user_timestamps[user_id]
+            # Discard timestamps outside the sliding window
+            while timestamps and timestamps[0] <= now - self._window:
+                timestamps.popleft()
+            if len(timestamps) >= self._max_calls:
+                return False
+            timestamps.append(now)
+            return True
+
+
+_rate_limiter = _PerUserRateLimiter(max_calls=AI_RATE_LIMIT_PER_MINUTE)
+
+RATE_LIMIT_MESSAGE = (
+    "⏳ You're sending messages too quickly. "
+    "Please wait a moment before sending another message. "
+    "I'm still here for you!"
+)
+
+
+def _call_openrouter(messages: list[dict], max_tokens: int = 512, user_id: int = None) -> str:
     """Low-level call to OpenRouter. Returns the assistant message text."""
     if not OPENROUTER_API_KEY:
         logger.warning('OPENROUTER_API_KEY not set – returning fallback message.')
         return "I'm here for you. Please share what's on your mind."
+
+    if user_id is not None and not _rate_limiter.allow(user_id):
+        logger.warning('AI rate limit reached for user %s (%d calls/min).', user_id, AI_RATE_LIMIT_PER_MINUTE)
+        return RATE_LIMIT_MESSAGE
 
     headers = {
         'Authorization': f'Bearer {OPENROUTER_API_KEY}',
@@ -47,6 +89,7 @@ def generate_supportive_response(
     confession_positions: list[str],
     is_anonymous: bool,
     conversation_history: list[dict],
+    user_id: int = None,
 ) -> str:
     """
     Generate a supportive AI response given the full context.
@@ -94,6 +137,15 @@ def generate_supportive_response(
         system_prompt += (
             f"- Wants to connect with: {', '.join(confession_positions)}\n"
         )
+        system_prompt += (
+            "\nIMPORTANT INSTRUCTION FOR FIRST RESPONSE: "
+            "Since this confession has selected position(s), you MUST include the following sentence "
+            "naturally in your first response to the student: "
+            f"\"You will also get a comment back from {', '.join(confession_positions)}.\" "
+            "Integrate this sentence smoothly into your supportive response. "
+            "This should only appear in the very first response (when there is only one user message "
+            "in the conversation history).\n"
+        )
 
     system_prompt += (
         "\nRespond like a warm, caring friend. Keep it simple, friendly, and supportive. "
@@ -103,10 +155,10 @@ def generate_supportive_response(
     messages = [{'role': 'system', 'content': system_prompt}]
     messages.extend(conversation_history)
 
-    return _call_openrouter(messages, max_tokens=300)
+    return _call_openrouter(messages, max_tokens=300, user_id=user_id)
 
 
-def generate_confession_title(first_message: str) -> str:
+def generate_confession_title(first_message: str, user_id: int = None) -> str:
     """
     Auto-generate a short, descriptive title for a confession
     based on the student's first message.
@@ -129,7 +181,7 @@ def generate_confession_title(first_message: str) -> str:
         },
     ]
 
-    title = _call_openrouter(messages, max_tokens=20)
+    title = _call_openrouter(messages, max_tokens=20, user_id=user_id)
     # Clean up: remove quotes, limit length
     title = title.strip().strip('"').strip("'")
     if len(title) > 255:

@@ -26,7 +26,7 @@
                 Hi <strong>{{ user_name }}</strong>,
               </p>
               <p style="margin:0 0 20px; color:#374151; font-size:15px; line-height:1.6;">
-                We are writing to inform you that your request for a staff/user account status change has been 
+                We are writing to inform you that your account has been
                 <strong style="color:{% if status_label == 'approved' %}#059669{% else %}#dc2626{% endif %};">
                   {{ status_label }}
                 </strong>
@@ -35,7 +35,7 @@
 
               {% if status_label == 'approved' %}
               <p style="margin:24px 0 0; color:#374151; font-size:15px; line-height:1.6;">
-                Your account is now fully active. You can now access your dashboard and perform actions on Solace.
+                Your account is now fully active. You can now access to Solace application and perform actions on Solace.
               </p>
               {% else %}
               <p style="margin:24px 0 0; color:#374151; font-size:15px; line-height:1.6;">
@@ -61,7 +61,7 @@
           <tr>
             <td style="padding:20px 40px; border-top:1px solid #e5e7eb; text-align:center;">
               <p style="margin:0; color:#9ca3af; font-size:12px;">
-                You received this email because you registered an account on {{ site_name }}.
+                You received this email because you registered an account on Solace Web Application.
               </p>
             </td>
           </tr>

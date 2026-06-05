@@ -67,7 +67,7 @@ def _generate_ai_title_and_response_bg(confession_id, user_id, message_content, 
         # 1. Generate title in background
         title = 'New Confession'
         try:
-            title = generate_confession_title(message_content)
+            title = generate_confession_title(message_content, user_id=user_id)
             confession.title = title
             confession.save()
         except Exception as e:
@@ -110,6 +110,7 @@ def _generate_ai_title_and_response_bg(confession_id, user_id, message_content, 
                 confession_positions=positions,
                 is_anonymous=is_anonymous,
                 conversation_history=conversation_history,
+                user_id=user_id,
             )
         except Exception:
             ai_text = "I hear you. Thank you for sharing. I'm here to support you."
